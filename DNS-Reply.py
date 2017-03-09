@@ -25,8 +25,9 @@ class DNSReply:
     data=[]
 
     def __init__(self):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind(("localhost", 53))
+        self.sockRecv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sockRecv.bind(("localhost", 53))
+        self.sockSend=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
         self.getFileData("dnsrelay.txt")
 
     def getFileData(self,file): #读入数据
@@ -35,7 +36,7 @@ class DNSReply:
 
     def run(self):
         while True:
-            self.msg, self.addr = self.sock.recvfrom(1024)
+            self.msg, self.addr = self.sockRecv.recvfrom(1024)
             print(self.msg, self.addr)
             self.handleRequest()
 
@@ -48,18 +49,46 @@ class DNSReply:
             if Qtype=='0'*15+'1' and Qclass=='0'*15+'1':    #QTYPE=A,QCLASS=IN
                 for (ip,domain) in self.data:
                     if domain==QName:
-                        print(self.createResponse())
+                        response=self.createResponse(ip)
+                        self.sendData(self.sockRecv,response,self.addr)
+                        break
+                else:
+                    self.dnsForward()
 
-    def createResponse(self):
+    def createResponse(self,ip):    #构造回复报文
+        ip=ip.split('.')
         response=self.msg[:2]   #ID
-        response+=b'\x81\x80'
-        response+=b'\x00\x01'   #QDCOUNT
-        response+=b'\x00\x01'   #ANCOUNT
-        response+=b'\x00\x00'   #NSCOUNT
-        response+=b'\x00\x00'   #ARCOUNT
-        response+=self.msg[12:]
-        print(response)
+        if ip==['0','0','0','0']:   #域名不存在
+            response+=b'\x81\x83'   #RCODE:3
+            response+=b'\x00\x01'   #QDCOUNT
+            response+=b'\x00\x00'   #ANCOUNT
+            response+=b'\x00\x00'   #NSCOUNT
+            response+=b'\x00\x00'   #ARCOUNT
+        else:
+            response+=b'\x81\x80'
+            response+=b'\x00\x01'   #QDCOUNT
+            response+=b'\x00\x01'   #ANCOUNT
+            response+=b'\x00\x00'   #NSCOUNT
+            response+=b'\x00\x00'   #ARCOUNT
+            response+=self.msg[12:]
+            response+=b'\xC0\x0C'   #压缩算法,指向前面的QNAME
+            response+=b'\x00\x01'   #TYPE:A
+            response+=b'\x00\x01'   #CLASS:IN(1)
+            response+=b'\x00\x00\x00\xA8'   #TTL:168
+            response+=b'\x00\x04'   #RDLENGTH:4
+            for i in range(4):
+                response+=int(ip[i]).to_bytes(1,'little')
 
+        return response
+
+    def sendData(self,sock,data,addr):
+        sock.sendto(data,addr)
+
+    def dnsForward(self):
+        dnsAddr=('10.3.9.4',53)
+        self.sendData(self.sockSend,self.msg,dnsAddr)
+        msg,addr=self.sockSend.recvfrom(1024)
+        self.sendData(self.sockRecv,msg,self.addr)
 
     def byteTobit(self,byte):   #字节转成位
         bit=bin(byte)[2:]
