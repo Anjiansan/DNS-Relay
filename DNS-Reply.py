@@ -1,4 +1,6 @@
 import socket
+import select
+import argparse
 import threading
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
@@ -10,10 +12,11 @@ class DNSReply:
     transformIDs=[]  #转换后的ID
     data=[]
 
-    def __init__(self):
+    def __init__(self,args):
+        self.dnsServerIp=args.dnsServerIp
         self.sockRecv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sockRecv.bind(("localhost", 53))
-        self.getFileData("dnsrelay.txt")
+        self.getFileData(args.dbFile)
         self.pool=ThreadPoolExecutor(4) #线程池
         self.lockSock=Lock()
         self.lockID=Lock()
@@ -80,19 +83,35 @@ class DNSReply:
             self.transformIDs.append(ID)
             msg = int(ID, base=2).to_bytes(2, 'big')+msg[2:]  # ID
 
-        dnsAddr=('10.3.9.4',53)
+        dnsAddr=(self.dnsServerIp,53)
+        msgRecv = None
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.sendto(msg,dnsAddr)    #向远程DNS服务器发送请求
-        msgRecv,addrRecv=sock.recvfrom(1024)
+        sock.sendto(msg, dnsAddr)  # 向远程DNS服务器发送请求
+        ready = select.select([sock], [], [], 0.5)  # 0.5秒超时
+        if ready[0]:
+            msgRecv,addrRecv=sock.recvfrom(1024)
+        # msgRecv=None
+        # for i in range(3):  #未收到回复重发三遍
+        #     sock.sendto(msg,dnsAddr)    #向远程DNS服务器发送请求
+        #     ready=select.select([sock],[],[],0.5) #0.5秒超时
+        #     if ready[0]:
+        #         msgRecv,addrRecv=sock.recvfrom(1024)
+        #     print(msgRecv)
+        #     if msgRecv:
+        #         break
         sock.close()
         with self.lockSock:
             with self.lockID:
-                ID=self.byteTobit(msgRecv[0])+self.byteTobit(msgRecv[1])    #ID转换
-                ID=self.requestIDs[self.transformIDs.index(ID)]
-                msgRecv=int(ID,base=2).to_bytes(2,'big')+msgRecv[2:]
-                self.transformIDs.remove(self.transformIDs[self.requestIDs.index(ID)])   #移除ID
-                self.requestIDs.remove(ID)
-                self.sockRecv.sendto(msgRecv,addr)  #向请求方返回数据
+                if msgRecv is None:
+                    self.requestIDs.remove(self.requestIDs[self.transformIDs.index(ID)])  # 移除ID
+                    self.transformIDs.remove(ID)
+                else:
+                    ID=self.byteTobit(msgRecv[0])+self.byteTobit(msgRecv[1])    #ID转换
+                    ID=self.requestIDs[self.transformIDs.index(ID)]
+                    msgRecv=int(ID,base=2).to_bytes(2,'big')+msgRecv[2:]
+                    self.transformIDs.remove(self.transformIDs[self.requestIDs.index(ID)])   #移除ID
+                    self.requestIDs.remove(ID)
+                    self.sockRecv.sendto(msgRecv,addr)  #向请求方返回数据
 
     def byteTobit(self,byte):   #字节转成位
         bit=bin(byte)[2:]
@@ -112,7 +131,16 @@ class DNSReply:
 
 
 def main():
-    dnsReply = DNSReply()
+    parse=argparse.ArgumentParser(description="This is a DNS relay.")
+    parse.add_argument('-d',action="store_true",default=False,help="Debug level 1")
+    parse.add_argument('-dd',action="store_true",default=False,help="Debug level 2")
+    parse.add_argument(dest='dnsServerIp',action="store",nargs='?',default="10.3.9.6",help="DNS server ipaddr")
+    parse.add_argument(dest='dbFile',action="store",nargs='?',default="./dnsrelay.txt",help="DB filename")
+    args=parse.parse_args()
+    print("NameServer:",args.dnsServerIp)
+    print("DB file:",args.dbFile)
+    print("Debug level:",2 if args.dd else (1 if args.d else 0))
+    dnsReply = DNSReply(args)
     dnsReply.run()
 
 
