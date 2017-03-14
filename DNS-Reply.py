@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 QNAMEPOSITION=12    #QName在数据包中的起始位置
 
-class DNSReply:
+class DNSRelay:
     requestIDs=[]   #请求报文中的ID
     transformIDs=[]  #转换后的ID
     data=[]
@@ -87,7 +87,7 @@ class DNSReply:
         msgRecv = None
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.sendto(msg, dnsAddr)  # 向远程DNS服务器发送请求
-        ready = select.select([sock], [], [], 0.5)  # 0.5秒超时
+        ready = select.select([sock], [], [], 1)  # 0.5秒超时
         if ready[0]:
             msgRecv,addrRecv=sock.recvfrom(1024)
         # msgRecv=None
@@ -140,7 +140,7 @@ def main():
     print("NameServer:",args.dnsServerIp)
     print("DB file:",args.dbFile)
     print("Debug level:",2 if args.dd else (1 if args.d else 0))
-    dnsReply = DNSReply(args)
+    dnsReply = DNSRelay(args)
     dnsReply.run()
 
 
