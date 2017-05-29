@@ -15,10 +15,10 @@ class DNSRelay:
 
     def __init__(self, args):
         self.args = args  # 命令行参数
-        self.dnsServerIp = args.dnsServerIp #远程DNS服务器IP
+        self.dnsServerIp = args.dnsServerIp  # 远程DNS服务器IP
+        self.getFileData(args.dbFile)
         self.sockRecv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sockRecv.bind(("localhost", 53))
-        self.getFileData(args.dbFile)
         self.pool = ThreadPoolExecutor(4)  # 线程池
         self.lockSock = Lock()  # 服务器socket的线程锁
         self.lockID = Lock()  # 请求ID数组的线程锁
@@ -26,7 +26,8 @@ class DNSRelay:
 
     def getFileData(self, file):  # 读入数据
         with open(file) as input:
-            self.data = [tuple(line.strip().split(' ')) for line in input.readlines() if line != "\n"]
+            self.data = [tuple(line.strip().split(' '))
+                         for line in input.readlines() if line != "\n"]
         if self.args.d or self.args.dd:  # 输出调试信息
             print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), "try to load table...OK")
 
@@ -42,16 +43,18 @@ class DNSRelay:
         Qtype = self.byteTobit(msg[next]) + self.byteTobit(msg[next + 1])
         Qclass = self.byteTobit(msg[next + 2]) + self.byteTobit(msg[next + 3])
 
-        print() #方便查看,空行
-
         if self.args.d:  # 调试信息级别1(仅输出时间坐标,序号,查询的域名)
-            print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), "No:" + str(number), "QName:" + str(QName))
+            print()  # 方便查看,空行
+            print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                  "No:" + str(number), "QName:" + str(QName))
 
         if self.args.dd:  # 调试信息级别2
+            print()  # 方便查看,空行
             print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
                   "reveive from:" + str(addr),
                   "request:" + str(msg))
-            print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), "No:" + str(number), "QName:" + str(QName))
+            print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                  "No:" + str(number), "QName:" + str(QName))
             print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
                   "ID:" + str(self.byteTobit(msg[0]) + self.byteTobit(msg[1])),
                   "QR:" + str(bits[0]),
@@ -64,13 +67,16 @@ class DNSRelay:
                 for (ip, domain) in self.data:
                     if domain == QName:
                         if self.args.dd:  # 调试信息级别2
-                            print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), "find IP in local server")
-                            print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), "creating response")
+                            print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                                  "find IP in local server")
+                            print(time.strftime("%Y-%m-%d %H:%M:%S",
+                                                time.localtime()), "creating response")
 
                         response = self.createResponse(msg, ip)
                         self.sockRecv.sendto(response, addr)
                         if self.args.dd:  # 调试信息级别2
-                            print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), "sending response...OK")
+                            print(time.strftime("%Y-%m-%d %H:%M:%S",
+                                                time.localtime()), "sending response...OK")
                         break
                 else:
                     if self.args.dd:  # 调试信息级别2
@@ -108,7 +114,7 @@ class DNSRelay:
             response += b'\x00\x00\x00\xA8'  # TTL:168
             response += b'\x00\x04'  # RDLENGTH:4
             for i in range(4):
-                response += int(ip[i]).to_bytes(1, 'little')
+                response += int(ip[i]).to_bytes(1, 'big')
 
         return response
 
@@ -125,15 +131,17 @@ class DNSRelay:
         msgRecv = None
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.sendto(msg, dnsAddr)  # 向远程DNS服务器发送请求
-        ready= select.select([sock], [], [], 3.5)  # 3.5秒超时
+        ready = select.select([sock], [], [], 3.5)  # 3.5秒超时
         if ready[0]:
             msgRecv, addrRecv = sock.recvfrom(1024)
         sock.close()
 
         if msgRecv is not None and self.args.dd:  # 获得服务器的回复
-            print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), "get response from remote server")
-        elif msgRecv is None and self.args.dd:  #超时,未获得服务器的回复
-            print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), "timeout,can't get response from remote server")
+            print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                  "get response from remote server")
+        elif msgRecv is None and self.args.dd:  # 超时,未获得服务器的回复
+            print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                  "timeout,can't get response from remote server")
 
         with self.lockSock:
             with self.lockID:
@@ -149,7 +157,8 @@ class DNSRelay:
                     self.sockRecv.sendto(msgRecv, addr)  # 向请求方返回数据
 
                     if self.args.dd:  # 调试信息级别2
-                        print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), "sending response...OK")
+                        print(time.strftime("%Y-%m-%d %H:%M:%S",
+                                            time.localtime()), "sending response...OK")
 
     def byteTobit(self, byte):  # 字节转成位
         bit = bin(byte)[2:]
@@ -172,8 +181,10 @@ def main():
     parse = argparse.ArgumentParser(description="This is a DNS relay.")  # 命令行参数
     parse.add_argument('-d', action="store_true", default=False, help="Debug level 1")
     parse.add_argument('-dd', action="store_true", default=False, help="Debug level 2")
-    parse.add_argument(dest='dnsServerIp', action="store", nargs='?', default="10.3.9.6", help="DNS server ipaddr")
-    parse.add_argument(dest='dbFile', action="store", nargs='?', default="./dnsrelay.txt", help="DB filename")
+    parse.add_argument(dest='dnsServerIp', action="store", nargs='?',
+                       default="10.3.9.5", help="DNS server ipaddr")
+    parse.add_argument(dest='dbFile', action="store", nargs='?',
+                       default="./dnsrelay.txt", help="DB filename")
     args = parse.parse_args()
     print("NameServer:", args.dnsServerIp)
     print("DB file:", args.dbFile)
